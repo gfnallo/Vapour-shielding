@@ -46,7 +46,7 @@ isPlasmaModel = 'Lengyel';
 if (strcmp(isPlasmaModel,'Emanuelli')==1)
 
     % Rendo visibili funzioni dello 0D model: da modificare 
-    addpath('./Model_V.3_callable')
+    addpath('../0D_Helium_PlasmaModel')
 
     eVtoK = 1.16e4;
 
@@ -154,7 +154,7 @@ xx=[xx1;xx2];
 nn=length(xx);
 
 %Discretizzazione nel tempo
-dt=1e-3;
+dt=1e-1;
 
 %Preallocazione matrice dei coefficienti
 AA=zeros(nn,nn);
@@ -222,7 +222,9 @@ set(gcf,'position',[150,150,1000,570])
 ii=1;
 precisione=1;
 precisione_1=1;
-while precisione>1e-3 && precisione_1>1e-3    %per arrivare alla periodicità/stato asintotico  
+tEnd = 1;
+%while precisione>1e-3 && precisione_1>1e-3    %per arrivare alla periodicità/stato asintotico  
+while time(ii) < tEnd
     %Matrice
     alpha=(kk_cucrzr(Tprofile)./(rho_cucrzr(Tprofile).*cp_cucrzr(Tprofile))).*(xx<=LCuCrZr)+(kk_CPS_sn(Tprofile)./(rho_CPS_sn(Tprofile).*cp_CPS_sn(Tprofile))).*(xx>LCuCrZr); %CPS con Sn
     aa=alpha*dt./dx^2;
@@ -340,10 +342,6 @@ while precisione>1e-3 && precisione_1>1e-3    %per arrivare alla periodicità/st
         pause(0.01)
         legend('location','westoutside')
 
-        
-        if time(ii) > 1.0E-2
-            break
-        end
 end
 
 figure(9)
