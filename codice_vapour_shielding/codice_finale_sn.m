@@ -1,7 +1,7 @@
 %Codice finale ----- parete + vapore + plasma: vapour shielding,
 %evaporazione del LM, ebollizione nucleata, proprietà dipendenti dalla temperatura
 
-clear all
+clear 
 close all
 clc
 
@@ -38,6 +38,38 @@ set(0,'DefaultAxesFontSize',10)
 %per tau=1ms
 
 %modello di Lengyel
+
+%% Plasma - selezione modello
+
+isPlasmaModel = 'Lengyel';
+
+if (strcmp(isPlasmaModel,'Emanuelli')==1)
+
+    % Rendo visibili funzioni dello 0D model: da modificare 
+    addpath('./Model_V.3_callable')
+
+    eVtoK = 1.16e4;
+
+    % Imposto condizioni iniziali
+    ni0_Pls = 3e14;         % Imp+ density
+    nn0_Pls = 3e14;         % Imp density
+    ni0_Imp = 1e6;         % LM+ density
+    nn0_Imp = 1e11;         % LM density
+    Te0 = 5;            % electron temperature
+    Ti0_Pls = 300/eVtoK;         % Imp ion temperature
+    Tn0_Pls = 300/eVtoK;         % Imp neutral temperature
+    Ti0_Imp = (300+273.15)/eVtoK;         % LM ion temperature
+    Tn0_Imp = (300+273.15)/eVtoK;         % LM neutral temperature
+    t0  = 1e-9;           % time
+    T0_cool = 300+273.15;          % Coolant temperature behind the target [K]
+
+    initialState = [ni0_Pls, nn0_Pls, ni0_Imp, nn0_Imp, Te0, Ti0_Pls,...
+        Tn0_Pls, Ti0_Imp, Tn0_Imp, t0, T0_cool];
+
+    Pls = 'H';
+    Imp = 'Sn';
+
+end
 
 %% Parete - proprietà termofisiche
 Tw=140; %[°C]
@@ -122,7 +154,7 @@ xx=[xx1;xx2];
 nn=length(xx);
 
 %Discretizzazione nel tempo
-dt=1e-1;
+dt=1e-3;
 
 %Preallocazione matrice dei coefficienti
 AA=zeros(nn,nn);
@@ -147,8 +179,8 @@ B_theta_B_u___B_theta_B_t=3;  %(B_theta/B)_u/%(B_theta/B)_t  %da design DTT
 rapp_aree=sin(beta)*B_theta_B_u/B_theta_B_u___B_theta_B_t;
 
 %coefficiente di mitigazione per il gas nobile
-coeff_mitigazione=1.8; %!!!!!! usare questo coefficiente per vedere % stato stazionario oscillatorio
-% coeff_mitigazione=4.2;  %!!!!!! usare questo coefficiente per vedere % stato stazionario asintotico
+ coeff_mitigazione=1.8; %!!!!!! usare questo coefficiente per vedere % stato stazionario oscillatorio
+ %coeff_mitigazione=4.2;  %!!!!!! usare questo coefficiente per vedere % stato stazionario asintotico
 
 %lettura funzione di radiazione
 matrice_dati=load('Sn_dati.dat');  %lettura dati della funzione di radiazione per Sn
@@ -265,33 +297,56 @@ while precisione>1e-3 && precisione_1>1e-3    %per arrivare alla periodicità/st
         %Calcolo concentrazione vapore
         nz=nz_fun(time(ii),molar_flux(TT(end))*Avogadro);
         
-        %Plasma-soluzione del sistema nonlineare con il metodo di Newton
-        qq_par=@(qq,Tet,Teu,TT) (abs(qq^2+2*kke_par0*nz/nn_e_t(Tet,Teu)*nn_e_u^2*Teu^2*trapz(TT,sqrt(TT).*spline(temp,lz_fun,TT).*(TT>=1))))^(1/2);  %funzione ausiliaria
+        if (strcmp(isPlasmaModel,'Lengyel')==1)
+            %Plasma-soluzione del sistema nonlineare con il metodo di Newton
+            qq_par=@(qq,Tet,Teu,TT) (abs(qq^2+2*kke_par0*nz/nn_e_t(Tet,Teu)*nn_e_u^2*Teu^2*trapz(TT,sqrt(TT).*spline(temp,lz_fun,TT).*(TT>=1))))^(1/2);  %funzione ausiliaria
+    
+            funx1=@(qq,Tet,Teu) qq-(abs(q_par_u^2-2*kke_par0*nz/nn_e_t(Tet,Teu)*nn_e_u^2*Teu^2*trapz(intervallo(Tet,Teu),sqrt(intervallo(Tet,Teu)).*rad_fun(Tet,Teu))))^(1/2);
+            funx2=@(qq,Tet,Teu) qq-gamma*nn_e_u*Teu*(1.602e-19)/2*sqrt(2*Tet*(1.602e-19)/mm);
+            funx3=@(qq,Tet,Teu) LL_par-kke_par0*trapz(intervallo(Tet,Teu),intervallo(Tet,Teu).^(5/2)./qq_par(qq,Tet,Teu,intervallo(Tet,Teu)));
+    
+            fun2a=@(x) [funx1(x(1),x(2),x(3));funx2(x(1),x(2),x(3));funx3(x(1),x(2),x(3))];  %vettore avente per righe le equazioni del sistema
+            jfun2a=@(x) numerical_jacobian(fun2a,x,1e-6);
+            
+            if nz>1e21  %conviene usare guess_2
+              [yy,err,residual,niter]=myNewton_Jac(fun2a,jfun2a,guess_2,toll,max_iter);
+            else
+              [yy,err,residual,niter]=myNewton_Jac(fun2a,jfun2a,guess,toll,max_iter); 
+            end
 
-        funx1=@(qq,Tet,Teu) qq-(abs(q_par_u^2-2*kke_par0*nz/nn_e_t(Tet,Teu)*nn_e_u^2*Teu^2*trapz(intervallo(Tet,Teu),sqrt(intervallo(Tet,Teu)).*rad_fun(Tet,Teu))))^(1/2);
-        funx2=@(qq,Tet,Teu) qq-gamma*nn_e_u*Teu*(1.602e-19)/2*sqrt(2*Tet*(1.602e-19)/mm);
-        funx3=@(qq,Tet,Teu) LL_par-kke_par0*trapz(intervallo(Tet,Teu),intervallo(Tet,Teu).^(5/2)./qq_par(qq,Tet,Teu,intervallo(Tet,Teu)));
-
-        fun2a=@(x) [funx1(x(1),x(2),x(3));funx2(x(1),x(2),x(3));funx3(x(1),x(2),x(3))];  %vettore avente per righe le equazioni del sistema
-        jfun2a=@(x) numerical_jacobian(fun2a,x,1e-6);
+            flux(ii)=yy(1)*rapp_aree/coeff_mitigazione;   %passo da q//,t a q''t
         
-        if nz>1e21  %conviene usare guess_2
-          [yy,err,residual,niter]=myNewton_Jac(fun2a,jfun2a,guess_2,toll,max_iter);
+        elseif (strcmp(isPlasmaModel,'Emanuelli')==1)
+
+            [phiW,finalState] = callable_main(Pls, Imp, time(ii-1), time(ii), initialState, molar_flux(TT(end))*Avogadro*1E-4, TT(end));
+            flux(ii)=phiW*1.6e-19*1E4*rapp_aree/coeff_mitigazione;   %passo da q//,t a q''t
+            disp([time(ii),flux(ii)])
+            finalStateTransposed = finalState';
+            initialState = finalState;
+
+
         else
-          [yy,err,residual,niter]=myNewton_Jac(fun2a,jfun2a,guess,toll,max_iter); 
+            error('Unknown plasma model: stopping')
         end
+
+        %Aggiornamento12
         
-        %Aggiornamento
-        flux(ii)=yy(1)*rapp_aree/coeff_mitigazione;   %passo da q//,t a q''t
         Tm=TT;
         
         %Plot
+        figure(7)
         plot(xx*1e3,TT,'displayname',['t=' num2str(time(ii)) 's']);
+        hold on 
         pause(0.01)
         legend('location','westoutside')
+
+        
+        if time(ii) > 1.0E-2
+            break
+        end
 end
 
-figure(2)
+figure(9)
 plot(time,flux*1e-6,'r')
 grid minor
 xlim([0,time(end)])
@@ -299,7 +354,7 @@ xlabel("Tempo [s]")
 ylabel("Flusso termico [MW/m^2]")
 title('Flusso al target q''''_t nel tempo')
 
-figure(3)
+figure(10)
 plot(time,Tsurf)
 grid minor
 xlabel("Tempo [s]")
@@ -307,7 +362,7 @@ ylabel("Temperatura [K]")
 xlim([0,time(end)])
 title('Temperatura all''estremo alto del dominio nel tempo')
 
-figure(4)
+figure(11)
 plot(xx*1e3,Tin*ones(size(xx)),'displayname',['t_0'])
 hold on
 plot(xx*1e3,Tprofile,'displayname',['t=' num2str(time(end-1)) 's'])
@@ -342,7 +397,7 @@ for ii=1:length(temp)
     HTC(ii)=hh;
 end
     
-figure(5)
+figure(12)
 plot(temp,HTC*1e-3)
 grid minor
 xlim([temp(1),temp(end)])
@@ -361,5 +416,4 @@ critical_flux=Cf*0.23*f_0*rho_w*speed*i_fg*(1+0.00216*((pressure/22.09)^1.8)*J_a
 
 fprintf('Il flusso critico è %.2f [MW/m^2]\n',critical_flux*1e-6)
 fprintf('Il flusso iniziale al target è %.2f [MW/m^2]\n',flux(1)*1e-6)
-
 
